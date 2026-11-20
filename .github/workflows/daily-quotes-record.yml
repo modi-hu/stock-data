@@ -59,16 +59,22 @@ jobs:
           set -euo pipefail
           max_attempts=3
           for attempt in $(seq 1 "$max_attempts"); do
-            ./_skr/output/bin/skr eco --export-latest-csv --export-dir ./monthly 2>&1 | tee export.log
+            status=0
+            ./_skr/output/bin/skr eco --export-latest-csv --export-dir ./monthly 2>&1 | tee export.log || status=$?
             fatal_msg="$(grep -oP '\[FATAL\].*' export.log || true)"
-            if [ -n "$fatal_msg" ]; then
+            if [ "$status" -ne 0 ]; then
               if [ "$attempt" -lt "$max_attempts" ]; then
-                echo "::warning::Attempt $attempt/$max_attempts failed: $fatal_msg — retrying in 30s..."
+                reason="${fatal_msg:-skr exited with status $status}"
+                echo "::warning::Attempt $attempt/$max_attempts failed: $reason — retrying in 30s..."
                 sleep 30
                 continue
               fi
-              echo "::error::$fatal_msg"
-              exit 1
+              if [ -n "$fatal_msg" ]; then
+                echo "::error::$fatal_msg"
+              else
+                echo "::error::skr exited with status $status — check export.log"
+              fi
+              exit "$status"
             fi
             if grep -q "partial failures" export.log; then
               echo "::error::skr reported partial failures — check export.log"
